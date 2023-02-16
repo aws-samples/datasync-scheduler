@@ -123,7 +123,7 @@ Arn of executed tasks are stored in *arn_file.txt*. This file will be used to li
 
 -----
 ## **datasync agent ha**
-**datasync agent ha** will support fail-over of agent when Task execution failed. Only failover happen once per eash task to prevent from creating task infinitely.
+**datasync agent ha** will support fail-over of agent when Task execution failed. Only failover happen once per each task to prevent from creating task infinitely.
 ### How **datasync agent ha** Works
 1. find online DataSync agents
 2. read arns of TaskExecution from *arn_file.txt*
