@@ -1,6 +1,10 @@
 # aws datasync multi agent scheduler
 *datasync multi agents scheduler* will enhance AWS DataSync feature to support multi agents for a task, and *datasync_agent_ha* will support fail-over feature when Task Execution failed. 
 
+## Caveat
+- Both *datasync_multi_agents_scheduler.py* and *datasync_agent_ha.py* will create new source locations and multiple tasks when everytime it runs.
+- Theses scripts support only **NFS** source location. 
+
 ## Requirements
 - boto3: >= 1.26
 - python3
@@ -116,8 +120,10 @@ When *run_ds_sche.sh* run, log is written in *log/ds_ma_sche.log*. As well, you 
 ![Task Execution](images/task_execution.png)
 
 Arn of executed tasks are stored in *arn_file.txt*. This file will be used to limit the task execution list for fail-over. 
+
 -----
 ## **datasync agent ha**
+**datasync agent ha** will support fail-over of agent when Task execution failed. Only failover happen once per eash task to prevent from creating task infinitely.
 ### How **datasync agent ha** Works
 1. find online DataSync agents
 2. read arns of TaskExecution from *arn_file.txt*
@@ -173,6 +179,3 @@ $ sh run_ds_ha.sh
 Log is writing on *log/ds_ha.log*. As well, you can see re-tried task. 
 ![Retried Task](images/retried_task.png)
 
-## Caveat
-- Both *datasync_multi_agents_scheduler.py* and *datasync_agent_ha.py* will create new source locations and multiple tasks when everytime it runs.
-- Theses scripts support only **NFS** source location. 
