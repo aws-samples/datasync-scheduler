@@ -3,6 +3,7 @@ import time
 import argparse
 import logging
 import common
+from urllib.parse import urlparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--timeout_sec', help='specify sleeping timeout seconds ex) 300', default='300', action='store', required=False)
@@ -63,8 +64,10 @@ def get_tasks_info(exec_arn):
         task_res = ds_client.describe_task(TaskArn=task_arn)
         src_location = task_res['SourceLocationArn']
         src_loc_res = ds_client.describe_location_nfs(LocationArn=src_location)
-        server_name = src_loc_res['LocationUri'].split('/')[2]
-        subdir = "/" + src_loc_res['LocationUri'].split('/')[3]
+        nfs_url=src_loc_res['LocationUri']
+        parts = urlparse(nfs_url)
+        server_name = parts.netloc
+        subdir = parts.path
         dest_location = task_res['DestinationLocationArn']
         cloud_watch_arn = task_res['CloudWatchLogGroupArn']
         task_name = task_res['Name'] + "_retry"
