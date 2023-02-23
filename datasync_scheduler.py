@@ -4,10 +4,11 @@ import glob
 import argparse
 import logging
 import common
+import time
 
 """
-# Todo
-1. how to deal with, when include list is not specified. 
+ChangeLog
+- 2023.02.23: get_available_agents() instead of get_online_agents
 """
 
 # introduction
@@ -41,8 +42,8 @@ task_name_prefix = "Distributed_Tasks_"
 nfs_server_name="198.19.255.158"
 sub_dir="/vol1"
 mount_path_dir="/fsx"
-dest_loc = "arn:aws:datasync:ap-northeast-2:253679086765:location/loc-042c919ab6996b437"
-cloudwatch_arn = "arn:aws:logs:ap-northeast-2:253679086765:log-group:/aws/datasync:*"
+dest_loc = "arn:aws:datasync:ap-northeast-2:XXXXXXXXXXXX:location/loc-042c919ab6996b437"
+cloudwatch_arn = "arn:aws:logs:ap-northeast-2:XXXXXXXXXXXX:log-group:/aws/datasync:*"
 source_file = "source_file.manifest"
 """
 max_depth_size = 5
@@ -105,10 +106,10 @@ def get_source_filelist(source_file):
     origin_file_manifest = [(mount_path_dir + odir).rstrip() for odir in f.readlines() ]
     return origin_file_manifest
 
-def create_include_list(source_file, online_agents):
+def create_include_list(source_file, available_agents):
     """ create include_list to separate directories to ditribute task for each agent.
     """
-    agent_count = len(online_agents)
+    agent_count = len(available_agents)
     path_delimeter = "/*"
     depth_del = ""
     include_list = []
@@ -140,23 +141,23 @@ def create_include_list(source_file, online_agents):
         logger.info("dir scan reached to max_depth_size, but can't find proper directory count. It will return source dir lists." )
         return remove_sub_dir(dirs_list, mount_path_dir)
 
-def allocate_include_to_agent(include_list, online_agents):
+def allocate_include_to_agent(include_list, available_agents):
     """ allcate separated include_list to each agent
     return example: {'agent1_arn': {'incl': ['/dir1', '/dir2'], 'excl':''}, 'agent2_arn':{'incl': ['dir3', 'dir4'], 'excl': ''}, 'agent3_arn':{'incl':'dir5', 'excl':['dir1', 'dir2','dir3','dir4', 'dir5']}}
     """
     manifest_per_agent = {}
-    agent_count = len(online_agents)
+    agent_count = len(available_agents)
     source_list = get_source_filelist(source_file)
     if agent_count > 1:
         x = divide_by_agent_count(include_list, agent_count-1)
-        task_manifest = {online_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+        task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
         # add exclude_list into first agent to transfer remaining files
         exclude_list = include_list
-        task_manifest[online_agents[-1]] = {"incl": remove_sub_dir(source_list, mount_path_dir), "excl": exclude_list}
+        task_manifest[available_agents[-1]] = {"incl": remove_sub_dir(source_list, mount_path_dir), "excl": exclude_list}
         logger.info("agents: %s \n task manifest: %s",agent_count, task_manifest)
         return task_manifest
     elif agent_count == 1:
-        task_manifest = {online_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+        task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
         logger.info("agents: %s \n task manifest: %s",agent_count, task_manifest)
         return task_manifest
     else:
@@ -165,7 +166,7 @@ def allocate_include_to_agent(include_list, online_agents):
 
 ### starting main()
 if __name__ == "__main__":
-    online_agents = common.get_online_agents(ds_client, logger)
+    available_agents = common.get_available_agents(ds_client, logger)
     #initialize output file
     with open(output_file, 'w'):
         pass
@@ -174,11 +175,11 @@ if __name__ == "__main__":
     check_source_file(source_file)
 
     # create manifest for each agent
-    #agent_manifest = create_manifest(source_file, online_agents)
-    include_list = create_include_list(source_file, online_agents)
+    #agent_manifest = create_manifest(source_file, available_agents)
+    include_list = create_include_list(source_file, available_agents)
 
     # map separated include list to each agent
-    agent_manifest = allocate_include_to_agent(include_list, online_agents)
+    agent_manifest = allocate_include_to_agent(include_list, available_agents)
 
     # create tasks
     no = 0

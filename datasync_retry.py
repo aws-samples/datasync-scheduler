@@ -1,3 +1,7 @@
+"""
+ChangeLog:
+    - 2023.02.23: update_location instead of creating new task
+"""
 import boto3
 import time
 import argparse
@@ -44,7 +48,7 @@ def get_exec_arns(arn_file):
     """
     f = open(arn_file,'r')
     exec_arns_list = [odir.rstrip() for odir in f.readlines() ]
-    logger.info("specified task execution: %s", exec_arns_list)
+    logger.info("monitored task execution: %s", exec_arns_list)
     return exec_arns_list
 
 def check_failed_task(exec_arns_list):
@@ -53,10 +57,10 @@ def check_failed_task(exec_arns_list):
         res = ds_client.describe_task_execution(TaskExecutionArn=exec_arn)
         if res['Status'] == 'ERROR':
             failed_arn_list.append(exec_arn)
-    logger.info("failed task execution: %s", failed_arn_list)
+            #logger.info("failed task execution: %s", failed_arn_list)
     return failed_arn_list
 
-def get_tasks_info(exec_arn):
+def get_task_info(exec_arn):
     if exec_arn:
         tasks_info = []
         manifest = {}
@@ -79,7 +83,7 @@ def get_tasks_info(exec_arn):
             manifest['excl'] =  task_res['Excludes'][0]['Value']
         else:
             manifest['excl'] = ""
-        task_info={"src_loc": src_location, "dest_loc": dest_location, "cloud_watch_arn": cloud_watch_arn, "task_name": task_name,"manifest": manifest, "subdir": subdir, "server_name": server_name}
+        task_info={"task_arn": task_arn, "src_loc": src_location, "dest_loc": dest_location, "cloud_watch_arn": cloud_watch_arn, "task_name": task_name,"manifest": manifest, "subdir": subdir, "server_name": server_name}
     else:
         logger.info("Error: exec arn dose not exist")
     logger.info("failed task info: %s", task_info)
@@ -90,36 +94,34 @@ def get_tasks_info(exec_arn):
 
 ### starting main()
 if __name__ == "__main__":
-    retried_task_arn_list = []
+    retried_t_exec_arn_list = []
     while 1:
         failed_arn_list = []
-        online_agents = common.get_online_agents(ds_client, logger)
+        available_agents_arn = common.get_available_agents(ds_client, logger)
         exec_arns_list = get_exec_arns(arn_file)
         failed_list = check_failed_task(exec_arns_list)
 
         #remove already retried task from failed_list
-        [ failed_arn_list.append(i) for i in failed_list if i not in retried_task_arn_list ] 
+        [ failed_arn_list.append(i) for i in failed_list if i not in retried_t_exec_arn_list ] 
 
         # test failed arn
-        #failed_arn_list = ['arn:aws:datasync:ap-northeast-2:253679086765:task/task-0612c3d1ba3700499/execution/exec-04cbdb7375cf9e61c', 'arn:aws:datasync:ap-northeast-2:253679086765:task/task-0dc8bdbe78c2cf3ad/execution/exec-01ef6c476699454d5']
         failed_arn_count = len(failed_arn_list)
-        if failed_arn_count > 0 and len(online_agents) >= failed_arn_count:
+        if failed_arn_count > 0 and len(available_agents_arn) >= failed_arn_count:
             no = 0
             retry_tasks_arn = []
-            # create retry tasks
-            for task_arn in failed_arn_list:
-                ti = get_tasks_info(task_arn)
-                create_src_loc_res = common.create_src_loc(ds_client, ti['subdir'], ti['server_name'], online_agents[no], logger)
-                create_task_res = common.create_task(ds_client, create_src_loc_res, ti['dest_loc'], ti['cloud_watch_arn'], ti['task_name'], no, ti['manifest'], logger)
-                retry_tasks_arn.append(create_task_res['TaskArn'])
-                logger.info("retry task created: %s", create_task_res["TaskArn"])
-                retried_task_arn_list.append(task_arn)
+            # update retry source_location_nfs
+            for t_exec_arn in failed_arn_list:
+                ti = get_task_info(t_exec_arn)
+                update_src_loc_res = common.update_loc_nfs(ds_client, ti['src_loc'], available_agents_arn[-1], logger)
+                logger.info("updated source location: %s", ti['dest_loc'])
+                task_arn = ti['task_arn']
+                retry_tasks_arn.append(task_arn)
+                retried_t_exec_arn_list.append(t_exec_arn)
+                #logger.info("retry task created: %s", create_task_res["TaskArn"])
                 no += 1
-            exec_arns = []
             # execute retry tasks
             for task_arn in retry_tasks_arn:
                 start_retry_task_res = common.start_task(ds_client, task_arn, logger)
-                exec_arns.append(start_retry_task_res["TaskExecutionArn"])
                 logger.info("retry task executed: %s", start_retry_task_res["TaskExecutionArn"])
                 logger.info("There is/are %s retry task execution.....", no)
             # show retry esecution arn
