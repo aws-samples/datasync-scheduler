@@ -1,4 +1,5 @@
+# comment is working, this line will not be parsed
+#/   # you can input '/' for entire sub-directories
 /files
 /images
 /org
-/test1

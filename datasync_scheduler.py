@@ -8,6 +8,8 @@ import time
 
 """
 ChangeLog
+- 2023.02.27: fixing bug: distributing dirs to all agents even when dirs are less than agents
+- 2023.02.27: parsing only dir names starting with "/" on source.manifest 
 - 2023.02.23: get_available_agents() instead of get_online_agents
 """
 
@@ -42,8 +44,6 @@ task_name_prefix = "Distributed_Tasks_"
 nfs_server_name="198.19.255.158"
 sub_dir="/vol1"
 mount_path_dir="/fsx"
-dest_loc = "arn:aws:datasync:ap-northeast-2:XXXXXXXXXXXX:location/loc-042c919ab6996b437"
-cloudwatch_arn = "arn:aws:logs:ap-northeast-2:XXXXXXXXXXXX:log-group:/aws/datasync:*"
 source_file = "source_file.manifest"
 """
 max_depth_size = 5
@@ -86,7 +86,7 @@ def divide_by_agent_count(lst, n):
 
 def check_source_file(source_file):
     f = open(source_file,'r')
-    origin_file_manifest = [(mount_path_dir + odir).rstrip() for odir in f.readlines() if odir[0] == '#' ]
+    origin_file_manifest = [(mount_path_dir + odir).rstrip() for odir in f.readlines() if odir.startswith('/') == True]
     for path in origin_file_manifest:
         if not os.path.exists(path):
             logger.info("non path:: %s", path)
@@ -103,7 +103,7 @@ def get_source_filelist(source_file):
     """ read source_manifest file, and return directory list
     """
     f = open(source_file,'r')
-    origin_file_manifest = [(mount_path_dir + odir).rstrip() for odir in f.readlines() ]
+    origin_file_manifest = [(mount_path_dir + odir).rstrip() for odir in f.readlines() if odir.startswith('/') == True]
     return origin_file_manifest
 
 def create_include_list(source_file, available_agents):
@@ -138,8 +138,13 @@ def create_include_list(source_file, available_agents):
                 include_list = remove_sub_dir(temp_dirs_list, mount_path_dir)
                 return include_list
                 break
-        logger.info("dir scan reached to max_depth_size, but can't find proper directory count. It will return source dir lists." )
-        return remove_sub_dir(dirs_list, mount_path_dir)
+        ## include_list is less than agent count
+        if temp_dirs_list:
+            include_list = remove_sub_dir(temp_dirs_list, mount_path_dir)
+        else:
+            include_list = remove_sub_dir(dirs_list, mount_path_dir)
+        logger.info("scaned dirs are less than agent count")
+        return include_list
 
 def allocate_include_to_agent(include_list, available_agents):
     """ allcate separated include_list to each agent
@@ -147,18 +152,35 @@ def allocate_include_to_agent(include_list, available_agents):
     """
     manifest_per_agent = {}
     agent_count = len(available_agents)
+    include_list_count = len(include_list)
+    print("include_list: ", include_list)
     source_list = get_source_filelist(source_file)
     if agent_count > 1:
-        x = divide_by_agent_count(include_list, agent_count-1)
-        task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
-        # add exclude_list into first agent to transfer remaining files
-        exclude_list = include_list
-        task_manifest[available_agents[-1]] = {"incl": remove_sub_dir(source_list, mount_path_dir), "excl": exclude_list}
-        logger.info("agents: %s \n task manifest: %s",agent_count, task_manifest)
+        if include_list_count < agent_count:
+            agent_count = include_list_count
+            print("agent less:", agent_count)
+            """
+            #if new_agent_count > agent_count:
+            #    new_agent_count = agent_count
+            x = divide_by_agent_count(include_list, agent_count-1)
+            #task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+        else:
+            x = divide_by_agent_count(include_list, agent_count-1)
+            task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+            """
+        x = divide_by_agent_count(include_list, agent_count)
+        task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count)}
+        # add exclude_list into first agent to transfer remaining files when original directory is 1
+        if len(source_list) == 1:
+            exclude_list = include_list
+            x = divide_by_agent_count(include_list, agent_count-1)
+            task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+            task_manifest[available_agents[-1]] = {"incl": remove_sub_dir(source_list, mount_path_dir), "excl": exclude_list}
+        logger.info("agents: %d, task manifest: %s",agent_count, task_manifest)
         return task_manifest
     elif agent_count == 1:
         task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
-        logger.info("agents: %s \n task manifest: %s",agent_count, task_manifest)
+        logger.info("agents: %d, task manifest: %s",agent_count, task_manifest)
         return task_manifest
     else:
         logger.info("there is no available agent")
@@ -196,6 +218,7 @@ if __name__ == "__main__":
     for task_arn in tasks_arns:
         start_task_res = common.start_task(ds_client, task_arn, logger)
         exec_arns.append(start_task_res["TaskExecutionArn"])
+        print("")
     for exec_arn in exec_arns:
         with open(output_file, 'a') as arn_file:
             arn_file.write(exec_arn + "\n")

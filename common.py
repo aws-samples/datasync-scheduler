@@ -49,7 +49,7 @@ def get_available_agents(ds_client, logger):
         online_agents = get_online_agents(ds_client, logger)
         running_agents = get_running_agents(ds_client)
         available_agents = [ agent for agent in online_agents if agent not in running_agents ]
-    logger.info("available agents: %s", available_agents)
+    #logger.info("available agents: %s", available_agents)
     return available_agents
 
 def create_src_loc(ds_client, sub_dir, nfs_server_name, agent_arn, logger):
