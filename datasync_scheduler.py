@@ -8,7 +8,7 @@ import time
 
 """
 ChangeLog
-- 2023.02.28: add new parameter, --only_create_tasks will create tasks not executing tasks
+- 2023.02.28: add new variable, 'confirm_task_exec' will confirm execute task or not
 - 2023.02.27: fixing bug: distributing dirs to all agents even when dirs are less than agents
 - 2023.02.27: parsing only dir names starting with "/" on source.manifest 
 - 2023.02.23: get_available_agents() instead of get_online_agents
@@ -30,7 +30,7 @@ parser.add_argument('--mount_path_dir', help='specify local directory to be moun
 parser.add_argument('--dest_loc', help='specify destination location arn, you can get this arn from aws datasync webconsole', action='store', required=True)
 parser.add_argument('--cloudwatch_arn', help='specify cloud watch arn, you can get this arn from aws datasync webconsole', action='store', required=True)
 parser.add_argument('--source_file', help='specify include file list ex)source_file.manifest', action='store', required=True)
-parser.add_argument('--only_create_tasks', help='specify True if you want to crate tasks, not executing tasks', action='store')
+#parser.add_argument('--only_create_tasks', help='specify True if you want to crate tasks, not executing tasks', action='store')
 
 args = parser.parse_args()
 task_name_prefix = args.task_name
@@ -40,7 +40,7 @@ mount_path_dir = args.mount_path_dir
 source_file = args.source_file
 dest_loc = args.dest_loc
 cloudwatch_arn = args.cloudwatch_arn
-only_create_tasks = args.only_create_tasks
+#only_create_tasks = args.only_create_tasks
 
 # Global variables
 """
@@ -221,12 +221,13 @@ if __name__ == "__main__":
 
     # start tasks
     exec_arns = []
+    confirm_task_exec = input("Will you execute tasks? answer 'yes' or 'no' \n")
     for task_arn in tasks_arns:
-        if only_create_tasks == "True":
-            logger.info("task will not execute: %s", task_arn)
-        else:
+        if confirm_task_exec == "yes":
             start_task_res = common.start_task(ds_client, task_arn, logger)
             exec_arns.append(start_task_res["TaskExecutionArn"])
+        else:
+            logger.info("task will not execute: %s", task_arn)
     for exec_arn in exec_arns:
         with open(output_file, 'a') as arn_file:
             arn_file.write(exec_arn + "\n")
