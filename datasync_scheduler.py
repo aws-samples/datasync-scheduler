@@ -8,6 +8,7 @@ import time
 
 """
 ChangeLog
+- 2023.02.28: add new parameter, --only_create_tasks will create tasks not executing tasks
 - 2023.02.27: fixing bug: distributing dirs to all agents even when dirs are less than agents
 - 2023.02.27: parsing only dir names starting with "/" on source.manifest 
 - 2023.02.23: get_available_agents() instead of get_online_agents
@@ -29,6 +30,7 @@ parser.add_argument('--mount_path_dir', help='specify local directory to be moun
 parser.add_argument('--dest_loc', help='specify destination location arn, you can get this arn from aws datasync webconsole', action='store', required=True)
 parser.add_argument('--cloudwatch_arn', help='specify cloud watch arn, you can get this arn from aws datasync webconsole', action='store', required=True)
 parser.add_argument('--source_file', help='specify include file list ex)source_file.manifest', action='store', required=True)
+parser.add_argument('--only_create_tasks', help='specify True if you want to crate tasks, not executing tasks', action='store')
 
 args = parser.parse_args()
 task_name_prefix = args.task_name
@@ -38,12 +40,16 @@ mount_path_dir = args.mount_path_dir
 source_file = args.source_file
 dest_loc = args.dest_loc
 cloudwatch_arn = args.cloudwatch_arn
+only_create_tasks = args.only_create_tasks
+
 # Global variables
 """
 task_name_prefix = "Distributed_Tasks_"
 nfs_server_name="198.19.255.158"
 sub_dir="/vol1"
 mount_path_dir="/fsx"
+dest_loc = "arn:aws:datasync:ap-northeast-2:253679086765:location/loc-042c919ab6996b437"
+cloudwatch_arn = "arn:aws:logs:ap-northeast-2:253679086765:log-group:/aws/datasync:*"
 source_file = "source_file.manifest"
 """
 max_depth_size = 5
@@ -216,9 +222,11 @@ if __name__ == "__main__":
     # start tasks
     exec_arns = []
     for task_arn in tasks_arns:
-        start_task_res = common.start_task(ds_client, task_arn, logger)
-        exec_arns.append(start_task_res["TaskExecutionArn"])
-        print("")
+        if only_create_tasks == "True":
+            logger.info("task will not execute: %s", task_arn)
+        else:
+            start_task_res = common.start_task(ds_client, task_arn, logger)
+            exec_arns.append(start_task_res["TaskExecutionArn"])
     for exec_arn in exec_arns:
         with open(output_file, 'a') as arn_file:
             arn_file.write(exec_arn + "\n")
