@@ -5,10 +5,12 @@ import argparse
 import logging
 import common
 import time
+import json
 
 """
 ChangeLog
-- 2023.02.28: add new variable, 'confirm_task_exec' will confirm execute task or not
+- 2023.03.07: bug fixed while disritubing directories to agents
+- 2023.02.28: add new parameter, --only_create_tasks will create tasks not executing tasks
 - 2023.02.27: fixing bug: distributing dirs to all agents even when dirs are less than agents
 - 2023.02.27: parsing only dir names starting with "/" on source.manifest 
 - 2023.02.23: get_available_agents() instead of get_online_agents
@@ -48,11 +50,11 @@ task_name_prefix = "Distributed_Tasks_"
 nfs_server_name="198.19.255.158"
 sub_dir="/vol1"
 mount_path_dir="/fsx"
-dest_loc = "arn:aws:datasync:ap-northeast-2:253679086765:location/loc-042c919ab6996b437"
-cloudwatch_arn = "arn:aws:logs:ap-northeast-2:253679086765:log-group:/aws/datasync:*"
+dest_loc = "arn:aws:datasync:ap-northeast-2:XXXXXXXXXXXX:location/loc-042c919ab6996b437"
+cloudwatch_arn = "arn:aws:logs:ap-northeast-2:XXXXXXXXXXXX:log-group:/aws/datasync:*"
 source_file = "source_file.manifest"
 """
-max_depth_size = 5
+#max_depth_size = 1 ## Depricated variable
 output_file = "arn_file.txt"
 ds_ma_sche_logfile = "log/ds_ma_sche.log"
 ds_client = boto3.client('datasync')
@@ -123,7 +125,7 @@ def create_include_list(source_file, available_agents):
     #total_file_manifest = origin_file_manifest
     dirs_list = get_source_filelist(source_file)
     logger.info("Distribute directories to agents")
-    if len(dirs_list) >= agent_count:
+    if len(dirs_list) > 1:
         include_list = remove_sub_dir(dirs_list, mount_path_dir)
         return include_list
     elif agent_count == 1:
@@ -131,7 +133,8 @@ def create_include_list(source_file, available_agents):
         include_list = remove_sub_dir(dirs_list, mount_path_dir)
         return include_list
     else:
-        for depth_size in range(max_depth_size):
+        #for depth_size in range(max_depth_size):
+        for depth_size in range(1):
             depth_del += path_delimeter
             for path in dirs_list:
                 path_depth = glob.glob(path+depth_del)
@@ -140,12 +143,14 @@ def create_include_list(source_file, available_agents):
                     dir_name, file_name = os.path.split(path_depth[0])
                     path_dirs_list.append(dir_name)
                 temp_dirs_list += path_dirs_list
+                print("temp_dirs: ", temp_dirs_list)
             if len(temp_dirs_list) >= agent_count:
                 include_list = remove_sub_dir(temp_dirs_list, mount_path_dir)
                 return include_list
                 break
         ## include_list is less than agent count
         if temp_dirs_list:
+            print("temp_dirs: ", temp_dirs_list)
             include_list = remove_sub_dir(temp_dirs_list, mount_path_dir)
         else:
             include_list = remove_sub_dir(dirs_list, mount_path_dir)
@@ -159,35 +164,40 @@ def allocate_include_to_agent(include_list, available_agents):
     manifest_per_agent = {}
     agent_count = len(available_agents)
     include_list_count = len(include_list)
-    print("include_list: ", include_list)
+    #print("include_list: ", include_list)
+    #print("agent_count: ", agent_count)
     source_list = get_source_filelist(source_file)
-    if agent_count > 1:
-        if include_list_count < agent_count:
-            agent_count = include_list_count
-            print("agent less:", agent_count)
-            """
-            #if new_agent_count > agent_count:
-            #    new_agent_count = agent_count
-            x = divide_by_agent_count(include_list, agent_count-1)
-            #task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
-        else:
-            x = divide_by_agent_count(include_list, agent_count-1)
-            task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
-            """
-        x = divide_by_agent_count(include_list, agent_count)
-        task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count)}
-        # add exclude_list into first agent to transfer remaining files when original directory is 1
-        if len(source_list) == 1:
-            exclude_list = include_list
-            x = divide_by_agent_count(include_list, agent_count-1)
-            task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
-            task_manifest[available_agents[-1]] = {"incl": remove_sub_dir(source_list, mount_path_dir), "excl": exclude_list}
-        logger.info("agents: %d, task manifest: %s",agent_count, task_manifest)
-        return task_manifest
-    elif agent_count == 1:
+    if agent_count == 1:
         task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
         logger.info("agents: %d, task manifest: %s",agent_count, task_manifest)
         return task_manifest
+    elif agent_count > 1:
+        if include_list_count < agent_count:
+            agent_count = include_list_count
+        if len(source_list) > 1:
+            x = divide_by_agent_count(include_list, agent_count)
+            task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count)}
+            print(json.dumps(task_manifest, indent = 4))
+            return task_manifest
+        # add exclude_list into first agent to transfer remaining files when original directory is 1
+        elif len(source_list) == 1:
+            new_include_list = remove_sub_dir(source_list, mount_path_dir)
+            exclude_list = include_list
+            if new_include_list == exclude_list:
+                agent_count = include_list_count + 1
+                x = divide_by_agent_count(include_list, agent_count-1)
+                task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+            else:
+                agent_count = len(available_agents)
+                x = divide_by_agent_count(include_list, agent_count-1)
+                task_manifest = {available_agents[i]: {"incl":x[i], "excl":""}  for i in range(agent_count-1)}
+                task_manifest[available_agents[-1]] = {"incl": new_include_list, "excl": exclude_list}
+        #logger.info("agents: %d, task manifest: %s",agent_count, task_manifest)
+            print(json.dumps(task_manifest, indent = 4))
+            return task_manifest
+        else:
+            logger.info("There is no directory in source.manifest file")
+            exit()
     else:
         logger.info("there is no available agent")
 
