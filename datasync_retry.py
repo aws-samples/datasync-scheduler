@@ -1,5 +1,6 @@
 """
 ChangeLog:
+    - 2023.03.07: update available_agents not to use same agent
     - 2023.02.23: update_location instead of creating new task
 """
 import boto3
@@ -8,6 +9,7 @@ import argparse
 import logging
 import common
 from urllib.parse import urlparse
+import random
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--timeout_sec', help='specify sleeping timeout seconds ex) 300', default='300', action='store', required=False)
@@ -112,7 +114,12 @@ if __name__ == "__main__":
             # update retry source_location_nfs
             for t_exec_arn in failed_arn_list:
                 ti = get_task_info(t_exec_arn)
+                print("agent arn: ", available_agents_arn[-1])
                 update_src_loc_res = common.update_loc_nfs(ds_client, ti['src_loc'], available_agents_arn[-1], logger)
+                available_agents_arn.pop(-1)
+                if len(available_agents_arn) == 0:
+                    available_agents_arn = common.get_available_agents(ds_client, logger)
+                    random.shuffle(available_agents_arn)
                 logger.info("updated source location: %s", ti['dest_loc'])
                 task_arn = ti['task_arn']
                 retry_tasks_arn.append(task_arn)
