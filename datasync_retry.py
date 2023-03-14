@@ -1,5 +1,6 @@
 """
 ChangeLog:
+    - 2023.03.14: add check_final_task_status() to gather the status of latest task execution of specific task
     - 2023.03.07: update available_agents not to use same agent
     - 2023.02.23: update_location instead of creating new task
 """
@@ -50,16 +51,31 @@ def get_exec_arns(arn_file):
     """
     f = open(arn_file,'r')
     exec_arns_list = [odir.rstrip() for odir in f.readlines() ]
-    logger.info("monitored task execution: %s", exec_arns_list)
+    for exec_arn in exec_arns_list:
+        logger.info("monitoring task execution: %s", exec_arn)
     return exec_arns_list
+
+def check_final_task_status(task_exec_arn):
+    """ check status of latest task executions to determine retry or not
+    """
+    task_arn = task_exec_arn.split("/execution")[0]
+    res = ds_client.list_task_executions(TaskArn=task_arn)
+    if res['TaskExecutions'][-1]['Status'] == 'ERROR':
+        return task_exec_arn
+    else:
+        return None
+    #print("list of task execution:", res['TaskExecutions'][-1]['Status'])
+
 
 def check_failed_task(exec_arns_list):
     failed_arn_list = []
     for exec_arn in exec_arns_list:
-        res = ds_client.describe_task_execution(TaskExecutionArn=exec_arn)
-        if res['Status'] == 'ERROR':
+        failed_exec_arn = check_final_task_status(exec_arn)
+        #res = ds_client.describe_task_execution(TaskExecutionArn=exec_arn)
+        #if res['Status'] == 'ERROR':
+        #    failed_arn_list.append(exec_arn)
+        if failed_exec_arn:
             failed_arn_list.append(exec_arn)
-            #logger.info("failed task execution: %s", failed_arn_list)
     return failed_arn_list
 
 def get_task_info(exec_arn):
